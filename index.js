@@ -26,25 +26,19 @@ if (fs.existsSync(BACKUP_FILE)) {
 
 cron.schedule('* * * * *', async () => {
     try {
-        // কোনো থার্ড-পার্টি প্রক্সি ছাড়া সরাসরি রিয়াল ব্রাউজার হেডার দিয়ে রিকোয়েস্ট
-        const response = await axios.get('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10', {
-            headers: {
-                'accept': 'application/json, text/plain, */*',
-                'accept-language': 'en-US,en;q=0.9,bn;q=0.8',
-                'referer': 'https://ar-lottery01.com/',
-                'origin': 'https://ar-lottery01.com',
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                'sec-ch-ua': '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-                'sec-fetch-dest': 'empty',
-                'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'same-site'
-            },
-            timeout: 15000
+        // ক্লাউডফ্লেয়ার বাইপাস করার জন্য স্ক্যাপারসাইট ফ্রি গেটওয়ে ব্যবহার
+        const targetUrl = 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10';
+        const response = await axios.get(`https://api.scrapersite.com/v1?url=${encodeURIComponent(targetUrl)}`, {
+            timeout: 20000
         });
 
-        const list = response.data?.data?.list;
+        // যদি রেসপন্স টেক্সট আকারে আসে তবে পার্স করবে, নাহলে ডিরেক্ট অবজেক্ট নেবে
+        let responseData = response.data;
+        if (typeof responseData === 'string') {
+            responseData = JSON.parse(responseData);
+        }
+
+        const list = responseData?.data?.list;
         if (list && list.length > 0) {
             let newItemsCount = 0;
             const reversed = [...list].reverse();
@@ -202,4 +196,4 @@ app.post('/api/v2/predict', (req, res) => {
 });
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-              
+        
