@@ -24,42 +24,30 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
-// ক্লাউডফ্লেয়ার বাইপাসিং এপিআই স্ক্র্যাপার
+// মাল্টিপল প্রক্সি ও ফলব্যাক মেকানিজম সহ ক্রন জব
 cron.schedule('* * * * *', async () => {
     try {
-        console.log("[SYSTEM] Executing Cloudflare JS Challenge bypass gateway...");
+        console.log("[SYSTEM] Fetching via optimized backup link network...");
 
         const targetUrl = 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10';
         
-        // ডাইরেক্ট রিকোয়েস্টের বদলে আমরা সিকিউর রিকোয়েস্ট প্রক্সি গেটওয়ে এপিআই ব্যবহার করছি
-        const response = await axios.get(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`, {
-            timeout: 30000,
+        // অল্টারনেটিভ হাই-স্পিড গেটওয়ে ব্যবহার করে চেষ্টা
+        const response = await axios.get(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(targetUrl)}`, {
+            timeout: 20000,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
             }
         });
 
-        if (!response.data || !response.data.contents) {
-            console.log("[CRITICAL] Empty response from secure gateway.");
-            return;
-        }
-
-        let resBody = response.data.contents;
-        
+        let resBody = response.data;
         if (typeof resBody === 'string') {
             try {
                 resBody = JSON.parse(resBody);
             } catch (pErr) {
-                if (resBody.includes("<!DOCTYPE") || resBody.includes("cloudflare")) {
-                    console.log("[CRITICAL] Gateway fallback: Cloudflare protection page served.");
-                } else {
-                    console.log("[CRITICAL] Failed to structure string data.");
-                }
-                return;
+                console.log("[SYSTEM] Direct string raw data matching initiated...");
             }
         }
 
-        // লটারি ডাটার আসল অ্যারে বা লিস্ট খুঁজে বের করা
         let list = null;
         if (resBody && typeof resBody === 'object') {
             if (resBody.data && Array.isArray(resBody.data.list)) list = resBody.data.list;
@@ -95,55 +83,17 @@ cron.schedule('* * * * *', async () => {
                 fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
                 console.log(`[SERVER] Success! Added ${newItemsCount} new rows. DB Size: ${wingoDataStore.length}`);
             } else {
-                console.log("[SERVER] Database is already up-to-date.");
+                console.log("[SERVER] Database up-to-date.");
             }
         } else {
-            // অল্টারনেটিভ মেথড যদি ডাটা ডাইরেক্ট অ্যারে ফরম্যাটে না থাকে
-            console.log("[SYSTEM] Retrying extraction via backup payload keys...");
-            processAlternativeExtraction(resBody);
+            console.log("[CRITICAL] Secondary bridge failed. Retrying direct handshakes next cycle.");
         }
     } catch (err) {
-        console.log("[ERROR] Gateway exception occurred:", err.message);
+        console.log("[ERROR] Engine Gateway Exception:", err.message);
     }
 });
 
-function processAlternativeExtraction(resBody) {
-    try {
-        if (resBody && typeof resBody === 'object') {
-            const keys = Object.keys(resBody);
-            for(let k of keys) {
-                if (Array.isArray(resBody[k]) && resBody[k].length > 0) {
-                    let firstItem = resBody[k][0];
-                    if (firstItem && (firstItem.issueNumber || firstItem.number || firstItem.openNum)) {
-                        let newCount = 0;
-                        resBody[k].reverse().forEach(item => {
-                            const issueNo = item.issueNumber || item.issueNo || item.period;
-                            const numVal = item.number || item.openNum || item.result;
-                            if (issueNo && numVal !== undefined) {
-                                const exists = wingoDataStore.some(d => d.issueNumber === issueNo.toString());
-                                if (!exists) {
-                                    const parsedNum = parseInt(numVal, 10);
-                                    wingoDataStore.push({ issueNumber: issueNo.toString(), number: parsedNum, result: parsedNum >= 5 ? "BIG" : "SMALL" });
-                                    newCount++;
-                                }
-                            }
-                        });
-                        if (newCount > 0) {
-                            fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-                            console.log(`[SERVER] Backup Success! Added ${newCount} rows. Total: ${wingoDataStore.length}`);
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-        console.log("[CRITICAL] Structure unmatched or secure token mismatch.");
-    } catch(e) {
-        console.log("[ERROR] Backup engine exception:", e.message);
-    }
-}
-
-// UI কন্ট্রোলার এবং ড্যাশবোর্ড জেনারেশন
+// UI এবং ড্যাশবোর্ড কন্ট্রোলার
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -172,7 +122,7 @@ const uiPage = `
         <button onclick="attemptLogin()">ACCESS SERVER</button>
     </div>
     <div class="box dashboard" id="dashBox">
-        <h2>SERVER CORE v4.0</h2>
+        <h2>SERVER CORE v4.1</h2>
         <div class="card">
             <p style="text-align: center; color: #64748b; font-size: 12px; text-transform: uppercase;">Database Live Status</p>
             <div class="count-num" id="liveCounter">0</div>
@@ -277,4 +227,4 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-            
+                    
