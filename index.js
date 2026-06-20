@@ -25,26 +25,33 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
-// প্রক্সি টানেল লিস্ট (রেন্ডারের আইপি লুকানোর জন্য ফ্রি ব্যাকআপ রুট)
+// নতুন ও আপডেটেড প্রক্সি টানেল লিস্ট (Cloudflare Bypass করার জন্য)
 const proxyNodes = [
-    'https://api.allorigins.win/raw?url=',
+    'https://api.codetabs.com/v1/proxy/?quest=',
     'https://corsproxy.io/?',
-    'https://thingproxy.freeboard.io/fetch/'
+    'https://win-go-proxy-backup.vercel.app/proxy?url=', // যদি নিজের বানানো কোনো প্রক্সি থাকে
+    'DIRECT' // সব প্রক্সি ফেল করলে সরাসরি রিকোয়েস্ট পাঠাবে
 ];
 let currentProxyIndex = 0;
 
-// মোবাইল রিয়াল ব্রাউজার ফিঙ্গারপ্রিন্ট জেনারেটর
+// হাই-কোয়ালিটি রিয়াল মোবাইল ব্রাউজার ফিঙ্গারপ্রিন্ট
 function getAntiBlockHeaders() {
-    const chromeVersions = ['124.0.0.0', '125.0.0.0', '126.0.0.0'];
+    const androidVersions = ['11', '12', '13', '14'];
+    const chromeVersions = ['124.0.0.0', '125.0.0.0', '126.0.0.0', '127.0.0.0'];
+    const randomAndroid = androidVersions[Math.floor(Math.random() * androidVersions.length)];
     const selectedVer = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
     
     return {
         'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9,bn;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
         'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Host': 'draw.ar-lottery01.com',
+        'Origin': 'https://draw.ar-lottery01.com',
         'Pragma': 'no-cache',
-        'User-Agent': `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${selectedVer} Mobile Safari/537.36`,
-        'Sec-Ch-UA': `"Not-A.Brand";v="99", "Chromium";v="${selectedVer.split('.')[0]}"`,
+        'Referer': 'https://draw.ar-lottery01.com/',
+        'User-Agent': `Mozilla/5.0 (Linux; Android ${randomAndroid}; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${selectedVer} Mobile Safari/537.36`,
+        'Sec-Ch-UA': `"Chromium";v="${selectedVer.split('.')[0]}", "Not=A?Brand";v="99"`,
         'Sec-Ch-UA-Mobile': '?1',
         'Sec-Ch-UA-Platform': '"Android"',
         'X-Requested-With': 'XMLHttpRequest'
@@ -55,24 +62,31 @@ function getAntiBlockHeaders() {
 cron.schedule('*/3 * * * * *', async () => {
     try {
         const rawUrl = 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10';
-        
-        // প্রক্সি টানেলের মাধ্যমে রিকোয়েস্ট রাউটিং (ক্লাউডফ্লেয়ার বাইপাস করার জন্য)
+        let targetUrl = '';
+        let configHeaders = getAntiBlockHeaders();
+
         const proxyPrefix = proxyNodes[currentProxyIndex];
-        const targetUrl = `${proxyPrefix}${encodeURIComponent(rawUrl)}`;
+        
+        if (proxyPrefix === 'DIRECT') {
+            targetUrl = rawUrl; // প্রক্সি ছাড়া ডিরেক্ট রিকোয়েস্ট
+        } else {
+            targetUrl = `${proxyPrefix}${encodeURIComponent(rawUrl)}`;
+            delete configHeaders['Host']; // প্রক্সি ব্যবহারের সময় হোস্ট হেডার রিমুভ করা নিরাপদ
+        }
 
         const response = await axios({
             method: 'get',
             url: targetUrl,
-            timeout: 12000,
-            headers: getAntiBlockHeaders(),
+            timeout: 10000,
+            headers: configHeaders,
             validateStatus: function (status) {
                 return status >= 200 && status < 500;
             }
         });
 
-        // যদি প্রক্সি নোড ব্লক হয় বা ফায়ারওয়াল রেসপন্স দেয়, রুট চেঞ্জ হবে
-        if (response.status === 403 || response.status === 429 || typeof response.data === 'string' && response.data.includes('DOCTYPE html')) {
-            console.log(`[SHIELD] Cloudflare challenge detected on Route ${currentProxyIndex}. Switching tunnel...`);
+        // যদি ক্লাউডফ্লেয়ার ব্লক বা ক্যাপচা পেজ আসে
+        if (response.status === 403 || response.status === 429 || (typeof response.data === 'string' && response.data.includes('DOCTYPE html'))) {
+            console.log(`[SHIELD] Cloudflare challenge detected on Route ${currentProxyIndex} (${proxyPrefix}). Switching tunnel...`);
             currentProxyIndex = (currentProxyIndex + 1) % proxyNodes.length;
             return;
         }
@@ -111,15 +125,17 @@ cron.schedule('*/3 * * * * *', async () => {
             });
 
             if (newItemsCount > 0) {
-                // আনলিমিটেড ডাটাবেজ প্রসেস (৫০০০+)
+                // ডাটা ৫০০০ এর বেশি হয়ে গেলে মেমোরি ক্লিয়ার রাখার জন্য সাইজ কন্ট্রোল (ঐচ্ছিক কিন্তু নিরাপদ)
+                if (wingoDataStore.length > 6000) {
+                    wingoDataStore = wingoDataStore.slice(-5000);
+                }
                 fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
                 console.log(`[DATABASE] Success! Synced ${newItemsCount} entries. Total DB: ${wingoDataStore.length}`);
             }
         }
     } catch (err) {
-        // কোনো টানেলে এরর আসলে অটোমেটিক পরবর্তী টানেলে শিফট হবে
+        console.log(`[CONNECTION] Route ${currentProxyIndex} failed. Re-routing traffic through backup bridge...`);
         currentProxyIndex = (currentProxyIndex + 1) % proxyNodes.length;
-        console.log("[CONNECTION] Re-routing traffic through backup bridge...");
     }
 });
 
@@ -273,4 +289,4 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH PROXY TUNNEL UPSTREAM...'));
-            
+        
