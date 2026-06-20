@@ -1,10 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 
 const app = express();
 app.use(cors());
@@ -25,121 +23,47 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
-// নতুন ও আপডেটেড প্রক্সি টানেল লিস্ট (Cloudflare Bypass করার জন্য)
-const proxyNodes = [
-    'https://api.codetabs.com/v1/proxy/?quest=',
-    'https://corsproxy.io/?',
-    'https://win-go-proxy-backup.vercel.app/proxy?url=', // যদি নিজের বানানো কোনো প্রক্সি থাকে
-    'DIRECT' // সব প্রক্সি ফেল করলে সরাসরি রিকোয়েস্ট পাঠাবে
-];
-let currentProxyIndex = 0;
-
-// হাই-কোয়ালিটি রিয়াল মোবাইল ব্রাউজার ফিঙ্গারপ্রিন্ট
-function getAntiBlockHeaders() {
-    const androidVersions = ['11', '12', '13', '14'];
-    const chromeVersions = ['124.0.0.0', '125.0.0.0', '126.0.0.0', '127.0.0.0'];
-    const randomAndroid = androidVersions[Math.floor(Math.random() * androidVersions.length)];
-    const selectedVer = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
-    
-    return {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Host': 'draw.ar-lottery01.com',
-        'Origin': 'https://draw.ar-lottery01.com',
-        'Pragma': 'no-cache',
-        'Referer': 'https://draw.ar-lottery01.com/',
-        'User-Agent': `Mozilla/5.0 (Linux; Android ${randomAndroid}; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${selectedVer} Mobile Safari/537.36`,
-        'Sec-Ch-UA': `"Chromium";v="${selectedVer.split('.')[0]}", "Not=A?Brand";v="99"`,
-        'Sec-Ch-UA-Mobile': '?1',
-        'Sec-Ch-UA-Platform': '"Android"',
-        'X-Requested-With': 'XMLHttpRequest'
-    };
-}
-
-// ডাটা স্ক্র্যাপার ক্রন জব (প্রতি ৩ সেকেন্ড পর পর)
-cron.schedule('*/3 * * * * *', async () => {
-    try {
-        const rawUrl = 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10';
-        let targetUrl = '';
-        let configHeaders = getAntiBlockHeaders();
-
-        const proxyPrefix = proxyNodes[currentProxyIndex];
-        
-        if (proxyPrefix === 'DIRECT') {
-            targetUrl = rawUrl; // প্রক্সি ছাড়া ডিরেক্ট রিকোয়েস্ট
-        } else {
-            targetUrl = `${proxyPrefix}${encodeURIComponent(rawUrl)}`;
-            delete configHeaders['Host']; // প্রক্সি ব্যবহারের সময় হোস্ট হেডার রিমুভ করা নিরাপদ
-        }
-
-        const response = await axios({
-            method: 'get',
-            url: targetUrl,
-            timeout: 10000,
-            headers: configHeaders,
-            validateStatus: function (status) {
-                return status >= 200 && status < 500;
-            }
-        });
-
-        // যদি ক্লাউডফ্লেয়ার ব্লক বা ক্যাপচা পেজ আসে
-        if (response.status === 403 || response.status === 429 || (typeof response.data === 'string' && response.data.includes('DOCTYPE html'))) {
-            console.log(`[SHIELD] Cloudflare challenge detected on Route ${currentProxyIndex} (${proxyPrefix}). Switching tunnel...`);
-            currentProxyIndex = (currentProxyIndex + 1) % proxyNodes.length;
-            return;
-        }
-
-        let resBody = response.data;
-        if (typeof resBody === 'string') {
-            try { resBody = JSON.parse(resBody); } catch (e) { return; }
-        }
-
-        let list = null;
-        if (resBody && resBody.data && Array.isArray(resBody.data.list)) {
-            list = resBody.data.list;
-        }
-
-        if (list && list.length > 0) {
-            let newItemsCount = 0;
-            const reversed = [...list].reverse();
-
-            reversed.forEach(item => {
-                if (!item) return;
-                const issueNo = item.issueNumber || item.issueNo || item.period;
-                const numVal = item.number !== undefined ? item.number : item.openNum;
-
-                if (issueNo && numVal !== undefined && numVal !== null) {
-                    const exists = wingoDataStore.some(d => d.issueNumber === issueNo.toString());
-                    if (!exists) {
-                        const parsedNum = parseInt(numVal, 10);
-                        wingoDataStore.push({
-                            issueNumber: issueNo.toString(),
-                            number: parsedNum,
-                            result: parsedNum >= 5 ? "BIG" : "SMALL"
-                        });
-                        newItemsCount++;
-                    }
-                }
-            });
-
-            if (newItemsCount > 0) {
-                // ডাটা ৫০০০ এর বেশি হয়ে গেলে মেমোরি ক্লিয়ার রাখার জন্য সাইজ কন্ট্রোল (ঐচ্ছিক কিন্তু নিরাপদ)
-                if (wingoDataStore.length > 6000) {
-                    wingoDataStore = wingoDataStore.slice(-5000);
-                }
-                fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-                console.log(`[DATABASE] Success! Synced ${newItemsCount} entries. Total DB: ${wingoDataStore.length}`);
-            }
-        }
-    } catch (err) {
-        console.log(`[CONNECTION] Route ${currentProxyIndex} failed. Re-routing traffic through backup bridge...`);
-        currentProxyIndex = (currentProxyIndex + 1) % proxyNodes.length;
+// ক্লায়েন্ট থেকে স্ক্র্যাপ করা ডাটা রিসিভ করার এপিআই
+app.post('/api/sync-data', (req, res) => {
+    const { list } = req.body;
+    if (!list || !Array.isArray(list)) {
+        return res.status(400).json({ success: false, message: "Invalid data format" });
     }
+
+    let newItemsCount = 0;
+    const reversed = [...list].reverse();
+
+    reversed.forEach(item => {
+        if (!item) return;
+        const issueNo = item.issueNumber || item.issueNo || item.period;
+        const numVal = item.number !== undefined ? item.number : item.openNum;
+
+        if (issueNo && numVal !== undefined && numVal !== null) {
+            const exists = wingoDataStore.some(d => d.issueNumber === issueNo.toString());
+            if (!exists) {
+                const parsedNum = parseInt(numVal, 10);
+                wingoDataStore.push({
+                    issueNumber: issueNo.toString(),
+                    number: parsedNum,
+                    result: parsedNum >= 5 ? "BIG" : "SMALL"
+                });
+                newItemsCount++;
+            }
+        }
+    });
+
+    if (newItemsCount > 0) {
+        if (wingoDataStore.length > 6000) {
+            wingoDataStore = wingoDataStore.slice(-5000);
+        }
+        fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
+        console.log(`[BROWSER SYNC] Success! Synced ${newItemsCount} entries. Total DB: ${wingoDataStore.length}`);
+    }
+
+    res.json({ success: true, current_total: wingoDataStore.length });
 });
 
-// সার্ভার ড্যাশবোর্ড UI
+// সার্ভার ড্যাশবোর্ড UI (এখানেই ব্যাকগ্রাউন্ড স্ক্র্যাপার ঢুকিয়ে দেওয়া হয়েছে)
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -159,6 +83,7 @@ const uiPage = `
         .count-num { font-size: 42px; font-weight: 800; color: #10b981; text-align: center; margin: 10px 0; }
         .metric { display: flex; justify-content: space-between; margin: 8px 0; font-size: 14px; color: #94a3b8; }
         .metric span { color: #fff; font-weight: bold; }
+        .sync-badge { font-size: 11px; background: #1e293b; padding: 4px 8px; border-radius: 20px; color: #38bdf8; text-align: center; margin-top: 5px; display: inline-block; }
     </style>
 </head>
 <body>
@@ -173,6 +98,7 @@ const uiPage = `
             <p style="text-align: center; color: #64748b; font-size: 12px; text-transform: uppercase;">Database Live Status</p>
             <div class="count-num" id="liveCounter">0</div>
             <div class="metric">Server Strength (Total Data): <span id="srvStrength">0</span></div>
+            <center><div id="syncStatus" class="sync-badge">Initializing Auto-Bridge...</div></center>
         </div>
         <div class="card" style="border-color: rgba(34, 211, 238, 0.3);">
             <p style="text-align: center; color: #22d3ee; font-size: 12px; text-transform: uppercase; font-weight: bold; margin-bottom: 10px;">🧠 AI Human Thinking Output (6-Pattern Loop)</p>
@@ -191,8 +117,11 @@ const uiPage = `
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('dashBox').style.display = 'block';
                 startLiveUpdate();
+                startClientScraper(); // ক্লায়েন্ট ব্রাউজার থেকে স্ক্র্যাপিং শুরু
             } else { alert("ACCESS DENIED!"); }
         }
+
+        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা
         function startLiveUpdate() {
             setInterval(async () => {
                 try {
@@ -219,6 +148,47 @@ const uiPage = `
                     }
                 } catch(e){}
             }, 3000);
+        }
+
+        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার (যা ক্লাউডফ্লেয়ার ব্লক করবে না)
+        function startClientScraper() {
+            const syncStatus = document.getElementById('syncStatus');
+            
+            setInterval(async () => {
+                try {
+                    const targetUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10');
+                    
+                    const response = await fetch(targetUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json, text/plain, */*',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    const resData = await response.json();
+                    
+                    if (resData && resData.data && Array.isArray(resData.data.list)) {
+                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো
+                        const syncResponse = await fetch('/api/sync-data', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ list: resData.data.list })
+                        });
+                        const syncResult = await syncResponse.json();
+                        if(syncResult.success) {
+                            syncStatus.innerText = "🔄 Live Sync Active (Browser-Bridge)";
+                            syncStatus.style.color = "#10b981";
+                        }
+                    } else {
+                        syncStatus.innerText = "⚠️ Proxy Issue. Retrying next loop...";
+                        syncStatus.style.color = "#f59e0b";
+                    }
+                } catch (err) {
+                    syncStatus.innerText = "🔌 Connection Lost. Re-linking...";
+                    syncStatus.style.color = "#ef4444";
+                }
+            }, 5000); // প্রতি ৫ সেকেন্ড পর পর ব্রাউজার থেকে ব্যাকগ্রাউন্ডে ডাটা টানবে
         }
     </script>
 </body>
@@ -288,5 +258,5 @@ function generateHumanThinkingPrediction() {
     };
 }
 
-app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH PROXY TUNNEL UPSTREAM...'));
-        
+app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH CLIENT-SIDE BRIDGE...'));
+                
