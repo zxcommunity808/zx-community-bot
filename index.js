@@ -122,11 +122,11 @@ const uiPage = `
             } else { alert("ACCESS DENIED!"); }
         }
 
-        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা (ফিক্সড ইউআরএল সহ)
+        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা (সঠিক ইউআরএল সহ)
         function startLiveUpdate() {
             setInterval(async () => {
                 try {
-                    const res = await fetch('https://zx-community-bot.onrender.com/api/status', {
+                    const res = await fetch('https://zihad-cryzone.onrender.com/api/status', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ token: serverToken })
@@ -151,7 +151,7 @@ const uiPage = `
             }, 3000);
         }
 
-        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার ব্রিজ (ফিক্সড ইউআরএল সহ)
+        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার ব্রিজ (সঠিক ইউআরএল সহ)
         function startClientScraper() {
             const syncStatus = document.getElementById('syncStatus');
             
@@ -170,8 +170,8 @@ const uiPage = `
                     const resData = await response.json();
                     
                     if (resData && resData.data && Array.isArray(resData.data.list)) {
-                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো (ফুল ইউআরএল সহ)
-                        const syncResponse = await fetch('https://zx-community-bot.onrender.com/api/sync-data', {
+                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো (সঠিক ইউআরএল সহ)
+                        const syncResponse = await fetch('https://zihad-cryzone.onrender.com/api/sync-data', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ list: resData.data.list })
