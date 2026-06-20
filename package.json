@@ -1,19 +1,16 @@
 {
   "name": "zx-community-bot",
-  "version": "2.0.0",
-  "description": "ZX Prime Server Bot with Emulation",
-  "main": "index.js",
+  "version": "2.5.0",
+  "description": "ZX Prime Server Bot with Client Bridge",
+  "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.7.2",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "got-scraping": "^4.0.0",
-    "node-cron": "^3.0.3"
+    "express": "^4.19.2"
   },
   "engines": {
     "node": ">=18.0.0"
