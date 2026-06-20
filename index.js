@@ -5,11 +5,12 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-app.use(cors());
+
+// 🔓 CORS পলিসি এবং হেডার্স চিরতরে ফিক্স করার জন্য ফুল পারমিশন মিডলওয়্যার
+app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// 🔓 CORS ও কানেকশন লস্ট চিরতরে ফিক্স করার জন্য স্পেশাল মিডলওয়্যার
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -24,7 +25,7 @@ const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
 
-// 💾 ডাটাবেস রিস্টার্ট প্রোটেকশন (ফাইল থেকে ওল্ড ডেটা লোড)
+// 💾 ডাটাবেস রিস্টার্ট প্রোটেকশন
 if (fs.existsSync(BACKUP_FILE)) {
     try {
         wingoDataStore = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
@@ -34,7 +35,7 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
-// 🔄 ব্রাউজার ব্রিজ এপিআই (ক্লাউডফ্লেয়ার বাইপাস করে ডেটা রিসিভ করার রুট)
+// 🔄 ডেটা রিসিভ করার মেইন রুট
 app.post('/api/sync-data', (req, res) => {
     const { list } = req.body;
     if (!list || !Array.isArray(list)) {
@@ -64,18 +65,17 @@ app.post('/api/sync-data', (req, res) => {
     });
 
     if (newItemsCount > 0) {
-        // মেমোরি ওভারফ্লো থেকে বাঁচতে সর্বোচ্চ ৬০০০ রো রাখা
         if (wingoDataStore.length > 6000) {
             wingoDataStore = wingoDataStore.slice(-5000);
         }
         fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-        console.log(`[BROWSER SYNC] Success! Synced ${newItemsCount} entries. Total DB: ${wingoDataStore.length}`);
+        console.log(`[SERVER SYNC] Success! Synced ${newItemsCount} entries. Total DB: ${wingoDataStore.length}`);
     }
 
     res.json({ success: true, current_total: wingoDataStore.length });
 });
 
-// 🎨 প্রিমিয়াম ড্যাশবোর্ড UI ফ্রন্টএন্ড (HTML/CSS)
+// 🎨 ড্যাশবোর্ড UI ফ্রন্টএন্ড
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -120,7 +120,7 @@ const uiPage = `
             <div class="metric">Calculated Accuracy: <span id="accOutput">-</span></div>
         </div>
     </div>
-        <script>
+                <script>
         let serverToken = "";
         function attemptLogin() {
             const pass = document.getElementById('passInput').value;
@@ -129,15 +129,15 @@ const uiPage = `
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('dashBox').style.display = 'block';
                 startLiveUpdate();
-                startClientScraper(); // ক্লায়েন্ট ব্রাউজার থেকে স্ক্র্যাপিং শুরু
+                startClientScraper();
             } else { alert("ACCESS DENIED!"); }
         }
 
-        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা (ফিক্সড ইউআরএল)
+        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা (আসল লিংকের সাথে অটো-ডিটেকশন)
         function startLiveUpdate() {
             setInterval(async () => {
                 try {
-                    const res = await fetch('https://zihad-cryzone.onrender.com/api/status', {
+                    const res = await fetch('/api/status', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ token: serverToken })
@@ -155,38 +155,38 @@ const uiPage = `
                             document.getElementById('accOutput').innerText = data.ai.accuracy;
                         } else {
                             sysStatus.innerText = "COLLECTING SYSTEM (" + data.total + "/15)";
+                            sysStatus.style.color = "#f59e0b";
                             document.getElementById('predOutput').innerText = "Waiting...";
                         }
                     }
                 } catch(e){
-                    // এরর হ্যান্ডেল করে কানেকশন স্ট্যাটাস ফ্রন্টএন্ডে রিয়েল-টাইম দেখানোর জন্য
                     document.getElementById('sysStatus').innerText = "RE-CONNECTING...";
                     document.getElementById('sysStatus').style.color = "#ef4444";
                 }
             }, 3000);
         }
 
-        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার ব্রিজ (ফিক্সড ইউআরএল)
+        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার ব্রিজ (প্রক্সি ছাড়া ফিক্সড মেথড)
         function startClientScraper() {
             const syncStatus = document.getElementById('syncStatus');
             
             setInterval(async () => {
                 try {
-                    const targetUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10');
-                    
-                    const response = await fetch(targetUrl, {
-                        method: 'GET',
+                    // প্রক্সি সাইট ব্লক করলেও যেন ডাইরেক্ট এপিআই রিকোয়েস্ট কাজ করে তার ব্যবস্থা
+                    const response = await fetch('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10', {
+                        method: 'POST',
                         headers: {
                             'Accept': 'application/json, text/plain, */*',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        }
+                            'Content-Type': 'application/json;charset=UTF-8'
+                        },
+                        body: JSON.stringify({ pageNo: 1, pageSize: 10, typeId: 1 })
                     });
 
                     const resData = await response.json();
                     
                     if (resData && resData.data && Array.isArray(resData.data.list)) {
-                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো (ফিক্সড ইউআরএল)
-                        const syncResponse = await fetch('https://zihad-cryzone.onrender.com/api/sync-data', {
+                        // ডাটা রিলেটিভ পাথে পাঠানো (যাতে হোস্ট নেম ভুল না হয়)
+                        const syncResponse = await fetch('/api/sync-data', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ list: resData.data.list })
@@ -197,14 +197,31 @@ const uiPage = `
                             syncStatus.style.color = "#10b981";
                         }
                     } else {
-                        syncStatus.innerText = "⚠️ Proxy Issue. Retrying next loop...";
+                        syncStatus.innerText = "⚠️ API Response Issue. Retrying...";
                         syncStatus.style.color = "#f59e0b";
                     }
                 } catch (err) {
+                    // যদি ডাইরেক্ট এপিআই ব্লক খায়, তবে অটোমেটিক ব্যাকআপ প্রক্সি ট্রাই করবে
+                    try {
+                        const backupUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10');
+                        const response = await fetch(backupUrl);
+                        const resData = await response.json();
+                        if (resData && resData.data && Array.isArray(resData.data.list)) {
+                            await fetch('/api/sync-data', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ list: resData.data.list })
+                            });
+                            syncStatus.innerText = "🔄 Live Sync Active (Proxy-Bridge)";
+                            syncStatus.style.color = "#10b981";
+                            return;
+                        }
+                    } catch(e){}
+                    
                     syncStatus.innerText = "🔌 Connection Lost. Re-linking...";
                     syncStatus.style.color = "#ef4444";
                 }
-            }, 5000); // প্রতি ৫ সেকেন্ড পর পর ব্যাকগ্রাউন্ডে ডাটা টানবে
+            }, 5000);
         }
     </script>
 </body>
@@ -275,4 +292,4 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH CLIENT-SIDE BRIDGE...'));
-                                                       
+                                                                            
