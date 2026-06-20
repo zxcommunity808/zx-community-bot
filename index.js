@@ -13,7 +13,7 @@ const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
 
-// 💾 ডাটাবেস লোডার
+// 💾 ডাটাবেস রিস্টার্ট প্রোটেকশন
 if (fs.existsSync(BACKUP_FILE)) {
     try {
         wingoDataStore = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
@@ -23,8 +23,8 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
-// 🔄 ডেটা ইনজেকশন প্রোসেসর
-function injectManualData(list) {
+// 🔄 ব্রাউজার থেকে আসা ডেটা সিঙ্ক ও অটো-ক্লিন লজিক
+function syncIncomingData(list) {
     if (!list || !Array.isArray(list)) return 0;
     let newItemsCount = 0;
     const reversed = [...list].reverse();
@@ -49,15 +49,16 @@ function injectManualData(list) {
     });
 
     if (newItemsCount > 0) {
+        // আনলিমিটেড কালেকশন: ৮ লাখ পার হলে পুরনো ৫০০০ ডিলিট
         if (wingoDataStore.length > 800000) { 
-            console.log(`[CLEANER] Database full. Automatically removing oldest 5000 rows.`);
             wingoDataStore = wingoDataStore.slice(5000); 
         }
         fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
+        console.log(`[AUTO-BRIDGE] Successfully Synced +${newItemsCount} Rows. Total: ${wingoDataStore.length}`);
     }
     return newItemsCount;
 }
-// 🎨 প্রিমিয়াম ড্যাশবোর্ড UI ফ্রন্টএন্ড (অটো-ইনজেক্টর টেক্সটবক্স সহ)
+// 🎨 প্রিমিয়াম ড্যাশবোর্ড UI ফ্রন্টএন্ড (ফুল অটো-কালেক্টর ক্লায়েন্ট ব্রিজ সহ)
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -70,15 +71,14 @@ const uiPage = `
         body { background: #070a13; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         .box { width: 100%; max-width: 450px; background: rgba(17, 24, 39, 0.75); padding: 30px 25px; border-radius: 24px; border: 1px solid rgba(34, 211, 238, 0.2); text-align: center; backdrop-filter: blur(10px); box-shadow: 0 0 25px rgba(34,211,238,0.15); margin: 20px; }
         h2 { color: #22d3ee; letter-spacing: 2px; margin-bottom: 20px; text-shadow: 0 0 10px rgba(34,211,238,0.4); }
-        input, textarea { width: 100%; padding: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid #1e293b; border-radius: 12px; color: #fff; margin-bottom: 15px; text-align: center; font-size: 16px; }
-        textarea { height: 80px; resize: none; font-size: 12px; text-align: left; font-family: monospace; }
+        input { width: 100%; padding: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid #1e293b; border-radius: 12px; color: #fff; margin-bottom: 15px; text-align: center; font-size: 16px; }
         button { width: 100%; padding: 14px; background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 100%); border: none; border-radius: 12px; color: #070a13; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         .dashboard { display: none; }
         .card { background: #0f172a; border: 1px solid #1e2937; padding: 20px; border-radius: 16px; margin-top: 15px; text-align: left; }
         .count-num { font-size: 42px; font-weight: 800; color: #10b981; text-align: center; margin: 10px 0; }
         .metric { display: flex; justify-content: space-between; margin: 8px 0; font-size: 14px; color: #94a3b8; }
         .metric span { color: #fff; font-weight: bold; }
-        .status-badge { font-size: 11px; background: #1e293b; padding: 4px 10px; border-radius: 20px; color: #a855f7; text-align: center; display: inline-block; }
+        .sync-badge { font-size: 11px; background: #1e293b; padding: 4px 10px; border-radius: 20px; color: #a855f7; text-align: center; display: inline-block; }
     </style>
 </head>
 <body>
@@ -91,9 +91,8 @@ const uiPage = `
         <h2>SERVER CORE v4.7</h2>
         
         <div class="card" style="border-color: rgba(168, 85, 247, 0.4);">
-            <p style="text-align: center; color: #a855f7; font-size: 12px; text-transform: uppercase; font-weight: bold; margin-bottom: 8px;">📥 FAST API INJECTOR (NO CLICK NEEDED)</p>
-            <textarea id="apiPaster" placeholder="এখানে লটারি সাইটের API রেসপন্স পেস্ট করো, সিস্টেম নিজে নিজেই ডেটা ইনজেক্ট করে নেবে..."></textarea>
-            <center><div id="injectStatus" class="status-badge">Waiting for paste...</div></center>
+            <p style="text-align: center; color: #a855f7; font-size: 12px; text-transform: uppercase; font-weight: bold; margin-bottom: 5px;">🤖 CLIENT BRIDGE COLLECTOR</p>
+            <center><div id="bridgeStatus" class="sync-badge" style="color: #22d3ee;">Initializing Bridge...</div></center>
         </div>
 
         <div class="card">
@@ -119,48 +118,43 @@ const uiPage = `
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('dashBox').style.display = 'block';
                 startLiveUpdate();
-                setupAutoInjector();
+                startClientBridge(); // ⚡ অটো-কালেক্টর চালু
             } else { alert("ACCESS DENIED!"); }
         }
 
-        // ⚡ পেস্ট ইভেন্ট লিসেনার (পেস্ট করলেই ক্লিক ছাড়া ইনজেক্ট হবে)
-        function setupAutoInjector() {
-            const paster = document.getElementById('apiPaster');
-            const injStatus = document.getElementById('injectStatus');
+        // ⚡ কোড নিজেই ব্রাউজার নেটওয়ার্ক দিয়ে লটারি সাইট থেকে অটো ডেটা নিবে
+        function startClientBridge() {
+            const bridgeStatus = document.getElementById('bridgeStatus');
             
-            paster.addEventListener('input', async () => {
-                const rawData = paster.value.trim();
-                if(!rawData) return;
-                
-                injStatus.innerText = "⚡ Processing Data...";
-                injStatus.style.color = "#f59e0b";
-                
+            setInterval(async () => {
                 try {
-                    let parsedJson = JSON.parse(rawData);
-                    let cleanList = [];
-                    if(parsedJson.data && Array.isArray(parsedJson.data.list)) { cleanList = parsedJson.data.list; }
-                    else if(Array.isArray(parsedJson.list)) { cleanList = parsedJson.list; }
-                    else if(Array.isArray(parsedJson)) { cleanList = parsedJson; }
-                    
-                    if(cleanList.length === 0) { throw new Error(); }
-
-                    const response = await fetch('/api/manual-inject', {
+                    // ব্রাউজার লেভেল থেকে সরাসরি অফিশিয়াল এপিআই রিকোয়েস্ট (যা লটারি সাইট ব্লক করবে না)
+                    const res = await fetch('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ token: serverToken, list: cleanList })
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+                        body: JSON.stringify({ pageNo: 1, pageSize: 10, typeId: 1 })
                     });
-                    const resData = await response.json();
-                    if(resData.success) {
-                        injStatus.innerText = "✅ Successfully Injected +" + resData.added + " New Rows!";
-                        injStatus.style.color = "#10b981";
-                        paster.value = ""; // বক্স খালি করা
-                        setTimeout(() => { injStatus.innerText = "Waiting for next paste..."; injStatus.style.color = "#a855f7"; }, 4000);
+                    const resData = await res.json();
+                    
+                    if (resData && resData.data && Array.isArray(resData.data.list)) {
+                        // ডেটা পাওয়া মাত্রই কোড নিজে নিজেই ব্যাকএন্ড সার্ভারে পুশ করে দেবে
+                        const injectRes = await fetch('/api/bridge-inject', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token: serverToken, list: resData.data.list })
+                        });
+                        const injectData = await injectRes.json();
+                        
+                        if(injectData.success) {
+                            bridgeStatus.innerText = "🟢 Auto-Collecting Active... Data Synced!";
+                            bridgeStatus.style.color = "#10b981";
+                        }
                     }
-                } catch(e) {
-                    injStatus.innerText = "❌ Invalid API Data! Try again.";
-                    injStatus.style.color = "#ef4444";
+                } catch (e) {
+                    bridgeStatus.innerText = "🔄 Bridge Retrying API Fetch...";
+                    bridgeStatus.style.color = "#f59e0b";
                 }
-            });
+            }, 6000); // প্রতি ৬ সেকেন্ডে ব্রাউজার নিজেই চেক করবে
         }
 
         function startLiveUpdate() {
@@ -202,11 +196,11 @@ const uiPage = `
 `;
 app.get('/', (req, res) => res.send(uiPage));
 
-// 📥 ম্যানুয়াল ইনজেকশন এপিআই রাউট
-app.post('/api/manual-inject', (req, res) => {
+// 📥 ক্লায়েন্ট ব্রিজ থেকে আসা অটো-ডেটা রিসিভার রাউট
+app.post('/api/bridge-inject', (req, res) => {
     if (req.body.token !== SECRETPASS) return res.status(401).json({ success: false, message: "Unauthorized" });
     
-    const addedCount = injectManualData(req.body.list);
+    const addedCount = syncIncomingData(req.body.list);
     res.json({ success: true, added: addedCount });
 });
 
@@ -288,5 +282,5 @@ function generateHumanThinkingPrediction() {
     };
 }
 
-app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH MANUAL INPUT INJECTOR...'));
-        
+app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH CLIENT-SIDE BRIDGE...'));
+    
