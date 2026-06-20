@@ -13,7 +13,7 @@ const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
 
-// ডাটাবেস লোড করা
+// 💾 ডাটাবেস রিস্টার্ট প্রোটেকশন (ফাইল থেকে ওল্ড ডেটা লোড)
 if (fs.existsSync(BACKUP_FILE)) {
     try {
         wingoDataStore = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
@@ -23,7 +23,7 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
-// ক্লায়েন্ট থেকে স্ক্র্যাপ করা ডাটা রিসিভ করার এপিআই
+// 🔄 ব্রাউজার ব্রিজ এপিআই (ক্লাউডফ্লেয়ার বাইপাস করে ডেটা রিসিভ করার রুট)
 app.post('/api/sync-data', (req, res) => {
     const { list } = req.body;
     if (!list || !Array.isArray(list)) {
@@ -53,6 +53,7 @@ app.post('/api/sync-data', (req, res) => {
     });
 
     if (newItemsCount > 0) {
+        // মেমোরি ওভারফ্লো থেকে বাঁচতে সর্বোচ্চ ৬০০০ রো রাখা
         if (wingoDataStore.length > 6000) {
             wingoDataStore = wingoDataStore.slice(-5000);
         }
@@ -63,7 +64,7 @@ app.post('/api/sync-data', (req, res) => {
     res.json({ success: true, current_total: wingoDataStore.length });
 });
 
-// সার্ভার ড্যাশবোর্ড UI (এখানেই ব্যাকগ্রাউন্ড স্ক্র্যাপার ঢুকিয়ে দেওয়া হয়েছে)
+// 🎨 প্রিমিয়াম ড্যাশবোর্ড UI ফ্রন্টএন্ড (HTML/CSS)
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -108,7 +109,7 @@ const uiPage = `
             <div class="metric">Calculated Accuracy: <span id="accOutput">-</span></div>
         </div>
     </div>
-    <script>
+        <script>
         let serverToken = "";
         function attemptLogin() {
             const pass = document.getElementById('passInput').value;
@@ -121,11 +122,11 @@ const uiPage = `
             } else { alert("ACCESS DENIED!"); }
         }
 
-        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা
+        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা (ফিক্সড ইউআরএল সহ)
         function startLiveUpdate() {
             setInterval(async () => {
                 try {
-                    const res = await fetch('/api/status', {
+                    const res = await fetch('https://zx-community-bot.onrender.com/api/status', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ token: serverToken })
@@ -150,7 +151,7 @@ const uiPage = `
             }, 3000);
         }
 
-        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার (যা ক্লাউডফ্লেয়ার ব্লক করবে না)
+        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার ব্রিজ (ফিক্সড ইউআরএল সহ)
         function startClientScraper() {
             const syncStatus = document.getElementById('syncStatus');
             
@@ -169,8 +170,8 @@ const uiPage = `
                     const resData = await response.json();
                     
                     if (resData && resData.data && Array.isArray(resData.data.list)) {
-                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো
-                        const syncResponse = await fetch('/api/sync-data', {
+                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো (ফুল ইউআরএল সহ)
+                        const syncResponse = await fetch('https://zx-community-bot.onrender.com/api/sync-data', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ list: resData.data.list })
@@ -188,7 +189,7 @@ const uiPage = `
                     syncStatus.innerText = "🔌 Connection Lost. Re-linking...";
                     syncStatus.style.color = "#ef4444";
                 }
-            }, 5000); // প্রতি ৫ সেকেন্ড পর পর ব্রাউজার থেকে ব্যাকগ্রাউন্ডে ডাটা টানবে
+            }, 5000); // প্রতি ৫ সেকেন্ড পর পর ব্যাকগ্রাউন্ডে ডাটা টানবে
         }
     </script>
 </body>
@@ -259,4 +260,3 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH CLIENT-SIDE BRIDGE...'));
-                
