@@ -26,10 +26,7 @@ if (fs.existsSync(BACKUP_FILE)) {
 
 cron.schedule('* * * * *', async () => {
     try {
-        const response = await axios.get('https://api.allorigins.win/raw?url=' + encodeURIComponent('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10'), {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-            },
+        const response = await axios.get('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10'), {
             timeout: 15000
         });
 
@@ -191,4 +188,4 @@ app.post('/api/v2/predict', (req, res) => {
 });
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-            
+        
