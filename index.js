@@ -23,61 +23,63 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
+// কাস্টম ক্লাউডফ্লেয়ার টানেল বাইপাস স্ক্র্যাপার
 cron.schedule('* * * * *', async () => {
     try {
-        console.log("[SYSTEM] Mimicking real browser environment via got-scraping...");
+        console.log("[SYSTEM] Re-initializing deep session emulation framework...");
         
         const { gotScraping } = await import('got-scraping');
 
+        // মেইন ড্র পেজের হোম সেশন তৈরি করা যাতে কুকি জেনারেট হয়
+        const sessionContext = await gotScraping({
+            url: 'https://draw.ar-lottery01.com/',
+            method: 'GET',
+            headerGeneratorOptions: {
+                browsers: ['chrome'],
+                devices: ['desktop'],
+                operatingSystems: ['windows']
+            }
+        });
+
+        const cookieHeader = sessionContext.headers['set-cookie'] ? sessionContext.headers['set-cookie'].join('; ') : '';
+
+        // সেশন কুকি সহ আসল এপিআই কল করা
         const response = await gotScraping({
             url: 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10',
             method: 'GET',
-            headerGeneratorOptions: {
-                browsers: ['chrome', 'edge'],
-                devices: ['desktop', 'mobile'],
-                operatingSystems: ['windows', 'android']
+            headers: {
+                'accept': 'application/json, text/plain, */*',
+                'accept-language': 'en-US,en;q=0.9',
+                'cookie': cookieHeader,
+                'referer': 'https://draw.ar-lottery01.com/',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin'
             },
-            timeout: { request: 25000 }
+            retry: { limit: 3 }
         });
 
         let resBody = response.body;
         
-        // স্ট্রিং ডাটাকে JSON অবজেক্টে রূপান্তর করার ফিক্স
         if (typeof resBody === 'string') {
+            if (resBody.trim().startsWith('<!DOCTYPE')) {
+                console.log("[CRITICAL] Secondary structural blocking encountered. Cloudflare JS challenge active.");
+                return;
+            }
             try {
                 resBody = JSON.parse(resBody);
             } catch (pErr) {
-                console.log("[CRITICAL] String received but failed to parse JSON. Text Snippet:", resBody.substring(0, 100));
+                console.log("[CRITICAL] Dynamic response could not be parsed.");
                 return;
             }
         }
 
         let list = null;
-
-        if (Array.isArray(resBody)) {
-            list = resBody;
-        } else if (resBody && typeof resBody === 'object') {
-            if (resBody.data && Array.isArray(resBody.data.list)) {
-                list = resBody.data.list;
-            } else if (Array.isArray(resBody.list)) {
-                list = resBody.list;
-            } else if (resBody.data && Array.isArray(resBody.data)) {
-                list = resBody.data;
-            } else {
-                for (let key in resBody) {
-                    if (Array.isArray(resBody[key])) {
-                        list = resBody[key];
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!list && resBody && typeof resBody === 'object') {
-            const rawValues = Object.values(resBody);
-            if (rawValues.length > 0 && (rawValues[0].issueNumber || rawValues[0].period || rawValues[0].issueNo)) {
-                list = rawValues;
-            }
+        if (resBody && typeof resBody === 'object') {
+            if (resBody.data && Array.isArray(resBody.data.list)) list = resBody.data.list;
+            else if (Array.isArray(resBody.list)) list = resBody.list;
+            else if (resBody.data && Array.isArray(resBody.data)) list = resBody.data;
+            else if (Array.isArray(resBody)) list = resBody;
         }
 
         if (list && list.length > 0) {
@@ -105,18 +107,19 @@ cron.schedule('* * * * *', async () => {
 
             if (newItemsCount > 0) {
                 fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-                console.log(`[SERVER] Success! Added ${newItemsCount} rows. Total DB Size: ${wingoDataStore.length}`);
+                console.log(`[SERVER] Success! Added ${newItemsCount} rows. DB Size: ${wingoDataStore.length}`);
             } else {
-                console.log("[SERVER] Check complete. No new data found.");
+                console.log("[SERVER] Database up-to-date. No new events.");
             }
         } else {
-            console.log("[CRITICAL] Could not extract list array. Response Keys:", Object.keys(resBody || {}));
+            console.log("[CRITICAL] Target dataset empty. Cloudflare bypass required.");
         }
     } catch (err) {
-        console.log("[ERROR] Browser emulation failed:", err.message);
+        console.log("[ERROR] Engine exception:", err.message);
     }
 });
 
+// ড্যাশবোর্ড UI জেনারেশন
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -145,7 +148,7 @@ const uiPage = `
         <button onclick="attemptLogin()">ACCESS SERVER</button>
     </div>
     <div class="box dashboard" id="dashBox">
-        <h2>SERVER CORE v3.0</h2>
+        <h2>SERVER CORE v3.5</h2>
         <div class="card">
             <p style="text-align: center; color: #64748b; font-size: 12px; text-transform: uppercase;">Database Live Status</p>
             <div class="count-num" id="liveCounter">0</div>
@@ -250,4 +253,4 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-            
+        
