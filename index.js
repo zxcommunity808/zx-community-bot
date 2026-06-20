@@ -9,6 +9,17 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// 🔓 CORS ও কানেকশন লস্ট চিরতরে ফিক্স করার জন্য স্পেশাল মিডলওয়্যার
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
 const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
@@ -122,7 +133,7 @@ const uiPage = `
             } else { alert("ACCESS DENIED!"); }
         }
 
-        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা (সঠিক ইউআরএল সহ)
+        // ১. সার্ভার স্ট্যাটাস লাইভ আপডেট রাখা (ফিক্সড ইউআরএল)
         function startLiveUpdate() {
             setInterval(async () => {
                 try {
@@ -147,11 +158,15 @@ const uiPage = `
                             document.getElementById('predOutput').innerText = "Waiting...";
                         }
                     }
-                } catch(e){}
+                } catch(e){
+                    // এরর হ্যান্ডেল করে কানেকশন স্ট্যাটাস ফ্রন্টএন্ডে রিয়েল-টাইম দেখানোর জন্য
+                    document.getElementById('sysStatus').innerText = "RE-CONNECTING...";
+                    document.getElementById('sysStatus').style.color = "#ef4444";
+                }
             }, 3000);
         }
 
-        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার ব্রিজ (সঠিক ইউআরএল সহ)
+        // ২. ক্লায়েন্ট-সাইড ব্রাউজার স্ক্র্যাপার ব্রিজ (ফিক্সড ইউআরএল)
         function startClientScraper() {
             const syncStatus = document.getElementById('syncStatus');
             
@@ -170,7 +185,7 @@ const uiPage = `
                     const resData = await response.json();
                     
                     if (resData && resData.data && Array.isArray(resData.data.list)) {
-                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো (সঠিক ইউআরএল সহ)
+                        // ডাটা সার্ভারে সিঙ্ক করার জন্য পাঠানো (ফিক্সড ইউআরএল)
                         const syncResponse = await fetch('https://zihad-cryzone.onrender.com/api/sync-data', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -260,3 +275,4 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME SYSTEM ONLINE WITH CLIENT-SIDE BRIDGE...'));
+                                                       
