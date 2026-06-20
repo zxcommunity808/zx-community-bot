@@ -15,27 +15,41 @@ const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
 
+// ডাটাবেস লোড বা রিনিউ করা
 if (fs.existsSync(BACKUP_FILE)) {
     try {
         wingoDataStore = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
-        console.log(`[SYSTEM] Loaded ${wingoDataStore.length} rows.`);
+        console.log(`[SYSTEM] Database Connected. Loaded ${wingoDataStore.length} rows.`);
     } catch (e) {
         wingoDataStore = [];
     }
 }
 
-// মাল্টিপল প্রক্সি ও ফলব্যাক মেকানিজম সহ ক্রন জব
-cron.schedule('* * * * *', async () => {
+// ১ মিনিটের উইঙ্গো লাইভ ডাটা স্ক্র্যাপার (অপ্টিমাইজড মাল্টি-চ্যানেল রিকোয়েস্ট)
+cron.schedule('*/3 * * * * *', async () => {
     try {
-        console.log("[SYSTEM] Fetching via optimized backup link network...");
-
+        // ডাইরেক্ট রিকোয়েস্টে ক্লাউডফ্লেয়ার বাইপাস করার জন্য গ্লোবাল এপিআই গেটওয়ে এন্ডপয়েন্ট
         const targetUrl = 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10';
         
-        // অল্টারনেটিভ হাই-স্পিড গেটওয়ে ব্যবহার করে চেষ্টা
-        const response = await axios.get(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(targetUrl)}`, {
-            timeout: 20000,
+        const response = await axios({
+            method: 'get',
+            url: targetUrl,
+            timeout: 8000,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+                'accept': 'application/json, text/plain, */*',
+                'accept-language': 'en-US,en;q=0.9,bn;q=0.8',
+                'cache-control': 'no-cache',
+                'pragma': 'no-cache',
+                'referer': 'https://draw.ar-lottery01.com/',
+                'origin': 'https://draw.ar-lottery01.com',
+                'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                'sec-ch-ua': '"Not-A.Brand";v="99", "Chromium";v="124"',
+                'sec-ch-ua-mobile': '?1',
+                'sec-ch-ua-platform': '"Android"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin',
+                'x-requested-with': 'XMLHttpRequest'
             }
         });
 
@@ -44,7 +58,10 @@ cron.schedule('* * * * *', async () => {
             try {
                 resBody = JSON.parse(resBody);
             } catch (pErr) {
-                console.log("[SYSTEM] Direct string raw data matching initiated...");
+                if (resBody.includes("<!DOCTYPE html>")) {
+                    console.log("[SYSTEM] Shield Alert: Cloudflare firewall security active. Retrying next cycle...");
+                    return;
+                }
             }
         }
 
@@ -63,9 +80,9 @@ cron.schedule('* * * * *', async () => {
             reversed.forEach(item => {
                 if (!item) return;
                 const issueNo = item.issueNumber || item.issueNo || item.period || item.issue;
-                const numVal = item.number || item.openNum || item.result || item.num;
+                const numVal = item.number !== undefined ? item.number : (item.openNum !== undefined ? item.openNum : item.result);
 
-                if (issueNo && numVal !== undefined) {
+                if (issueNo && numVal !== undefined && numVal !== null) {
                     const exists = wingoDataStore.some(d => d.issueNumber === issueNo.toString());
                     if (!exists) {
                         const parsedNum = parseInt(numVal, 10);
@@ -80,20 +97,22 @@ cron.schedule('* * * * *', async () => {
             });
 
             if (newItemsCount > 0) {
+                // ডাটাবেস সর্বোচ্চ ৩০০ রো এর মধ্যে সীমাবদ্ধ রাখা (Render-এর মেমোরি সেভ করার জন্য)
+                if (wingoDataStore.length > 300) {
+                    wingoDataStore = wingoDataStore.slice(-300);
+                }
                 fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-                console.log(`[SERVER] Success! Added ${newItemsCount} new rows. DB Size: ${wingoDataStore.length}`);
-            } else {
-                console.log("[SERVER] Database up-to-date.");
+                console.log(`[SERVER] Success! Sync Done. Added ${newItemsCount} new records. DB Strength: ${wingoDataStore.length}`);
             }
         } else {
-            console.log("[CRITICAL] Secondary bridge failed. Retrying direct handshakes next cycle.");
+            console.log("[SYSTEM] Warning: Structural parsed payload mismatch or empty data.");
         }
     } catch (err) {
-        console.log("[ERROR] Engine Gateway Exception:", err.message);
+        console.log("[ERROR] Sync Hub Exception:", err.message);
     }
 });
 
-// UI এবং ড্যাশবোর্ড কন্ট্রোলার
+// সার্ভার কোর রেন্ডার প্যানেল UI
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -122,7 +141,7 @@ const uiPage = `
         <button onclick="attemptLogin()">ACCESS SERVER</button>
     </div>
     <div class="box dashboard" id="dashBox">
-        <h2>SERVER CORE v4.1</h2>
+        <h2>SERVER CORE v4.2</h2>
         <div class="card">
             <p style="text-align: center; color: #64748b; font-size: 12px; text-transform: uppercase;">Database Live Status</p>
             <div class="count-num" id="liveCounter">0</div>
@@ -181,18 +200,21 @@ const uiPage = `
 
 app.get('/', (req, res) => res.send(uiPage));
 
+// অ্যাপ ভিউয়ার স্ট্যাটাস এন্ডপয়েন্ট
 app.post('/api/status', (req, res) => {
     if (req.body.token !== SECRETPASS) return res.status(401).json({ success: false });
     const aiEngine = generateHumanThinkingPrediction();
     res.json({ success: true, total: wingoDataStore.length, strength: wingoDataStore.length, ai: aiEngine });
 });
 
+// মড অ্যাপ্লিকেশন এপিআই হিট পয়েন্ট
 app.post('/api/v2/predict', (req, res) => {
     if (req.body.password !== SECRETPASS) return res.status(401).json({ success: false, message: "Unauthorized" });
     const aiEngine = generateHumanThinkingPrediction();
     res.json({ success: true, system_strength: wingoDataStore.length, prediction_data: aiEngine });
 });
 
+// হিউম্যান থিংকিং প্রেডিকশন অ্যালগরিদম
 function generateHumanThinkingPrediction() {
     if (wingoDataStore.length < 10) {
         return { status: "COLLECTING_DATA", message: `সার্ভার ডাটা সংগ্রহ করছে (${wingoDataStore.length}/10)` };
@@ -227,4 +249,3 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-                    
