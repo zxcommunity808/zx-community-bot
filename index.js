@@ -3,7 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
+const axios = require('axios'); // 🚀 শক্তিশালী ডাটা কালেকশনের জন্য
 
 const app = express();
 app.use(cors({ origin: '*' }));
@@ -14,7 +14,7 @@ const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
 
-// 💾 ডাটাবেস রিস্টার্ট প্রোটেকশন (ফাইল থেকে ওল্ড ডেটা লোড)
+// 💾 ডাটাবেস রিস্টার্ট প্রোটেকশন
 if (fs.existsSync(BACKUP_FILE)) {
     try {
         wingoDataStore = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
@@ -50,47 +50,45 @@ function syncIncomingData(list) {
     });
 
     if (newItemsCount > 0) {
-        // 🚨 আনলিমিটেড ডেটা কালেকশন লজিক: মেমোরি ক্র্যাশ প্রোটেকশন
-        // যখনই ডাটাবেজ অনেক বড় হয়ে ফুল লিমিট ছুবে, তখন পেছনের পুরনো ৫০০০ রো ডিলিট হবে
+        // আনলিমিটেড কালেকশন: ৮ লাখ পার হলে পেছনের ৫০০০ ডিলিট
         if (wingoDataStore.length > 800000) { 
-            console.log(`[CLEANER] System Full (${wingoDataStore.length} rows). Automatically deleting oldest 5000 rows...`);
+            console.log(`[CLEANER] System Full. Deleting oldest 5000 rows...`);
             wingoDataStore = wingoDataStore.slice(5000); 
         }
         fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-        console.log(`[BACKEND FETCH] Synced ${newItemsCount} entries. Total DB: ${wingoDataStore.length}`);
+        console.log(`[SERVER SCRAPER] Success! Synced +${newItemsCount} entries. Total: ${wingoDataStore.length}`);
     }
     return newItemsCount;
 }
 
-// 🤖 ব্যাকএন্ড অটো-স্ক্র্যাপার (২৪ ঘণ্টা ব্যাকগ্রাউন্ডে ডেটা কালেকশন)
-setInterval(() => {
-    const options = {
-        hostname: 'draw.ar-lottery01.com',
-        path: '/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10',
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json;charset=UTF-8',
-            'Accept': 'application/json, text/plain, */*'
-        }
-    };
-
-    const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-            try {
-                const resData = JSON.parse(data);
-                if (resData && resData.data && Array.isArray(resData.data.list)) {
-                    syncIncomingData(resData.data.list);
-                }
-            } catch (e) {}
+// 🤖 হাই-মাস্কিং ব্যাকএন্ড স্ক্র্যাপার (লটারি সার্ভারকে ধোঁকা দেওয়ার জন্য আসল ব্রাউজার হেডার্স)
+setInterval(async () => {
+    try {
+        const response = await axios.post('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10', 
+        {
+            pageNo: 1,
+            pageSize: 10,
+            typeId: 1
+        },
+        {
+            headers: {
+                'accept': 'application/json, text/plain, */*',
+                'accept-language': 'en-US,en;q=0.9,bn;q=0.8',
+                'content-type': 'application/json;charset=UTF-8',
+                'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                'origin': 'https://ar-lottery01.com',
+                'referer': 'https://ar-lottery01.com/'
+            },
+            timeout: 4000
         });
-    });
 
-    req.on('error', (e) => { console.error(`[FETCH ERROR] Retrying...`); });
-    req.write(JSON.stringify({ pageNo: 1, pageSize: 10, typeId: 1 }));
-    req.end();
-}, 5000);
+        if (response.data && response.data.data && Array.isArray(response.data.data.list)) {
+            syncIncomingData(response.data.data.list);
+        }
+    } catch (error) {
+        // এরর সাইলেন্ট রাখা হলো যাতে লগ জ্যাম না হয়
+    }
+}, 5000); // প্রতি ৫ সেকেন্ড পর পর ব্যাকগ্রাউন্ডে চেক করবে
 // 🎨 প্রিমিয়াম ড্যাশবোর্ড UI ফ্রন্টএন্ড (HTML/CSS)
 const uiPage = `
 <!DOCTYPE html>
@@ -214,7 +212,7 @@ function generateHumanThinkingPrediction() {
     let smallCountAfterPattern = 0;
     let numberFrequency = Array(10).fill(0);
 
-    // পুরো ডাটাবেসের ইতিহাসের সাথে এই ৬টি রেজাল্টের প্যাটার্ন পুঙ্খানুপুঙ্খ ম্যাচ করানো
+    // পুরো ডাটাবেসের ইতিহাসের সাথে এই 6-রেজাল্ট প্যাটার্ন পুঙ্খানুপুঙ্খ ম্যাচ করানো
     for (let i = 0; i < wingoDataStore.length - 7; i++) {
         const match = wingoDataStore[i].result === recentPattern[0] &&
                       wingoDataStore[i+1].result === recentPattern[1] &&
