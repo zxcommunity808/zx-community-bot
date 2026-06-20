@@ -26,13 +26,12 @@ if (fs.existsSync(BACKUP_FILE)) {
 
 cron.schedule('* * * * *', async () => {
     try {
-        // ক্লাউডফ্লেয়ার বাইপাস করার জন্য স্ক্যাপারসাইট ফ্রি গেটওয়ে ব্যবহার
+        // ক্লাউডফ্লেয়ার বাইপাস করার জন্য অফিশিয়াল অলঅরিজিনস গেটওয়ে ব্যবহার
         const targetUrl = 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10';
-        const response = await axios.get(`https://api.scrapersite.com/v1?url=${encodeURIComponent(targetUrl)}`, {
+        const response = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, {
             timeout: 20000
         });
 
-        // যদি রেসপন্স টেক্সট আকারে আসে তবে পার্স করবে, নাহলে ডিরেক্ট অবজেক্ট নেবে
         let responseData = response.data;
         if (typeof responseData === 'string') {
             responseData = JSON.parse(responseData);
@@ -196,4 +195,3 @@ app.post('/api/v2/predict', (req, res) => {
 });
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-        
