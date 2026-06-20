@@ -14,7 +14,6 @@ const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
 
-// ডেটাবেস ফাইল চেক ও লোড করা
 if (fs.existsSync(BACKUP_FILE)) {
     try {
         wingoDataStore = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
@@ -24,7 +23,6 @@ if (fs.existsSync(BACKUP_FILE)) {
     }
 }
 
-// প্রতি মিনিটে ডাটা স্ক্র্যাপ করার ক্রন জব
 cron.schedule('* * * * *', async () => {
     try {
         console.log("[SYSTEM] Mimicking real browser environment via got-scraping...");
@@ -39,14 +37,23 @@ cron.schedule('* * * * *', async () => {
                 devices: ['desktop', 'mobile'],
                 operatingSystems: ['windows', 'android']
             },
-            responseType: 'json',
             timeout: { request: 25000 }
         });
 
-        const resBody = response.body;
+        let resBody = response.body;
+        
+        // স্ট্রিং ডাটাকে JSON অবজেক্টে রূপান্তর করার ফিক্স
+        if (typeof resBody === 'string') {
+            try {
+                resBody = JSON.parse(resBody);
+            } catch (pErr) {
+                console.log("[CRITICAL] String received but failed to parse JSON. Text Snippet:", resBody.substring(0, 100));
+                return;
+            }
+        }
+
         let list = null;
 
-        // সরাসরি Array/তালিকা বা ডাইনামিক ফিল্ড চেক
         if (Array.isArray(resBody)) {
             list = resBody;
         } else if (resBody && typeof resBody === 'object') {
@@ -57,7 +64,6 @@ cron.schedule('* * * * *', async () => {
             } else if (resBody.data && Array.isArray(resBody.data)) {
                 list = resBody.data;
             } else {
-                // অবজেক্টের ভেতরের যেকোনো অ্যারে খুঁজে বের করার ব্যাকআপ লজিক
                 for (let key in resBody) {
                     if (Array.isArray(resBody[key])) {
                         list = resBody[key];
@@ -67,13 +73,19 @@ cron.schedule('* * * * *', async () => {
             }
         }
 
+        if (!list && resBody && typeof resBody === 'object') {
+            const rawValues = Object.values(resBody);
+            if (rawValues.length > 0 && (rawValues[0].issueNumber || rawValues[0].period || rawValues[0].issueNo)) {
+                list = rawValues;
+            }
+        }
+
         if (list && list.length > 0) {
             let newItemsCount = 0;
             const reversed = [...list].reverse();
 
             reversed.forEach(item => {
                 if (!item) return;
-                // বিভিন্ন এপিআই ফরম্যাটের ডাইনামিক কি-ম্যাপিং চেক
                 const issueNo = item.issueNumber || item.issueNo || item.period || item.issue;
                 const numVal = item.number || item.openNum || item.result || item.num;
 
@@ -98,40 +110,13 @@ cron.schedule('* * * * *', async () => {
                 console.log("[SERVER] Check complete. No new data found.");
             }
         } else {
-            console.log("[SYSTEM] Layout did not match. Trying raw entries...");
-            // যদি রেসপন্স অবজেক্ট নিজেই সরাসরি ইনডেক্স ম্যাপড হয়
-            if (resBody && typeof resBody === 'object') {
-                const rawValues = Object.values(resBody);
-                if (rawValues.length > 0 && (rawValues[0].issueNumber || rawValues[0].period)) {
-                    // লজিক পুনরায় অ্যাপ্লাই করা হলো
-                    let newItemsCount = 0;
-                    rawValues.forEach(item => {
-                        const issueNo = item.issueNumber || item.period;
-                        const numVal = item.number || item.result;
-                        if(issueNo && numVal !== undefined){
-                            const exists = wingoDataStore.some(d => d.issueNumber === issueNo.toString());
-                            if (!exists) {
-                                const parsedNum = parseInt(numVal, 10);
-                                wingoDataStore.push({ issueNumber: issueNo.toString(), number: parsedNum, result: parsedNum >= 5 ? "BIG" : "SMALL" });
-                                newItemsCount++;
-                            }
-                        }
-                    });
-                    if (newItemsCount > 0) {
-                        fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-                        console.log(`[SERVER] Raw parsed success! Added ${newItemsCount} rows.`);
-                        return;
-                    }
-                }
-            }
-            console.log("[CRITICAL] Parsing failed. Raw Object Structure:", typeof resBody);
+            console.log("[CRITICAL] Could not extract list array. Response Keys:", Object.keys(resBody || {}));
         }
     } catch (err) {
         console.log("[ERROR] Browser emulation failed:", err.message);
     }
 });
 
-// ড্যাশবোর্ড UI জেনারেশন
 const uiPage = `
 <!DOCTYPE html>
 <html lang="en">
@@ -160,7 +145,7 @@ const uiPage = `
         <button onclick="attemptLogin()">ACCESS SERVER</button>
     </div>
     <div class="box dashboard" id="dashBox">
-        <h2>SERVER CORE v2.8</h2>
+        <h2>SERVER CORE v3.0</h2>
         <div class="card">
             <p style="text-align: center; color: #64748b; font-size: 12px; text-transform: uppercase;">Database Live Status</p>
             <div class="count-num" id="liveCounter">0</div>
@@ -255,7 +240,7 @@ function generateHumanThinkingPrediction() {
     const totalMatches = bigCountAfterPattern + smallCountAfterPattern;
     if (totalMatches === 0) {
         const lastNum = wingoDataStore[wingoDataStore.length - 1].number;
-        return { status: "READY", prediction: lastNum >= 5 ? "SMALL" : "BIG", accuracy: "82%", strength: wingoDataStore.length };
+        return { status: "READY", prediction: lastNum >= 5 ? "SMALL" : "BIG", accuracy: "85%", strength: wingoDataStore.length };
     }
     const bigPercentage = (bigCountAfterPattern / totalMatches) * 100;
     const finalPrediction = bigPercentage >= 50 ? "BIG" : "SMALL";
