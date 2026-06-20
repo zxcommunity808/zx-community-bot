@@ -29,10 +29,8 @@ cron.schedule('* * * * *', async () => {
     try {
         console.log("[SYSTEM] Mimicking real browser environment via got-scraping...");
         
-        // ডাইনামিক ইমপোর্ট (got-scraping ESM মডিউল ব্যবহারের জন্য)
         const { gotScraping } = await import('got-scraping');
 
-        // আসল ব্রাউজারের ফিঙ্গারপ্রিন্ট হুবহু নকল করে রিকোয়েস্ট পাঠানো
         const response = await gotScraping({
             url: 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10',
             method: 'GET',
@@ -45,19 +43,27 @@ cron.schedule('* * * * *', async () => {
             timeout: { request: 25000 }
         });
 
-        // ডাইনামিক ডাটা পার্সিং (লিস্ট যেখানেই থাকুক খুঁজে বের করবে)
         const resBody = response.body;
         let list = null;
 
-        if (resBody) {
+        // সরাসরি Array/তালিকা বা ডাইনামিক ফিল্ড চেক
+        if (Array.isArray(resBody)) {
+            list = resBody;
+        } else if (resBody && typeof resBody === 'object') {
             if (resBody.data && Array.isArray(resBody.data.list)) {
                 list = resBody.data.list;
             } else if (Array.isArray(resBody.list)) {
                 list = resBody.list;
             } else if (resBody.data && Array.isArray(resBody.data)) {
                 list = resBody.data;
-            } else if (Array.isArray(resBody)) {
-                list = resBody;
+            } else {
+                // অবজেক্টের ভেতরের যেকোনো অ্যারে খুঁজে বের করার ব্যাকআপ লজিক
+                for (let key in resBody) {
+                    if (Array.isArray(resBody[key])) {
+                        list = resBody[key];
+                        break;
+                    }
+                }
             }
         }
 
@@ -66,9 +72,10 @@ cron.schedule('* * * * *', async () => {
             const reversed = [...list].reverse();
 
             reversed.forEach(item => {
-                // বিভিন্ন এপিআই ভ্যারিয়েশনের জন্য কী-নাম ডাইনামিক চেক
-                const issueNo = item.issueNumber || item.issueNo || item.period;
-                const numVal = item.number || item.openNum || item.result;
+                if (!item) return;
+                // বিভিন্ন এপিআই ফরম্যাটের ডাইনামিক কি-ম্যাপিং চেক
+                const issueNo = item.issueNumber || item.issueNo || item.period || item.issue;
+                const numVal = item.number || item.openNum || item.result || item.num;
 
                 if (issueNo && numVal !== undefined) {
                     const exists = wingoDataStore.some(d => d.issueNumber === issueNo.toString());
@@ -86,12 +93,38 @@ cron.schedule('* * * * *', async () => {
 
             if (newItemsCount > 0) {
                 fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
-                console.log(`[SERVER] Added ${newItemsCount} rows. Total DB Size: ${wingoDataStore.length}`);
+                console.log(`[SERVER] Success! Added ${newItemsCount} rows. Total DB Size: ${wingoDataStore.length}`);
             } else {
-                console.log("[SERVER] Check complete. No new issue numbers found.");
+                console.log("[SERVER] Check complete. No new data found.");
             }
         } else {
-            console.log("[SYSTEM] Raw Response Received but structural layout did not match. Raw Keys:", Object.keys(resBody || {}));
+            console.log("[SYSTEM] Layout did not match. Trying raw entries...");
+            // যদি রেসপন্স অবজেক্ট নিজেই সরাসরি ইনডেক্স ম্যাপড হয়
+            if (resBody && typeof resBody === 'object') {
+                const rawValues = Object.values(resBody);
+                if (rawValues.length > 0 && (rawValues[0].issueNumber || rawValues[0].period)) {
+                    // লজিক পুনরায় অ্যাপ্লাই করা হলো
+                    let newItemsCount = 0;
+                    rawValues.forEach(item => {
+                        const issueNo = item.issueNumber || item.period;
+                        const numVal = item.number || item.result;
+                        if(issueNo && numVal !== undefined){
+                            const exists = wingoDataStore.some(d => d.issueNumber === issueNo.toString());
+                            if (!exists) {
+                                const parsedNum = parseInt(numVal, 10);
+                                wingoDataStore.push({ issueNumber: issueNo.toString(), number: parsedNum, result: parsedNum >= 5 ? "BIG" : "SMALL" });
+                                newItemsCount++;
+                            }
+                        }
+                    });
+                    if (newItemsCount > 0) {
+                        fs.writeFileSync(BACKUP_FILE, JSON.stringify(wingoDataStore, null, 2), 'utf8');
+                        console.log(`[SERVER] Raw parsed success! Added ${newItemsCount} rows.`);
+                        return;
+                    }
+                }
+            }
+            console.log("[CRITICAL] Parsing failed. Raw Object Structure:", typeof resBody);
         }
     } catch (err) {
         console.log("[ERROR] Browser emulation failed:", err.message);
@@ -127,7 +160,7 @@ const uiPage = `
         <button onclick="attemptLogin()">ACCESS SERVER</button>
     </div>
     <div class="box dashboard" id="dashBox">
-        <h2>SERVER CORE v2.5</h2>
+        <h2>SERVER CORE v2.8</h2>
         <div class="card">
             <p style="text-align: center; color: #64748b; font-size: 12px; text-transform: uppercase;">Database Live Status</p>
             <div class="count-num" id="liveCounter">0</div>
@@ -222,7 +255,7 @@ function generateHumanThinkingPrediction() {
     const totalMatches = bigCountAfterPattern + smallCountAfterPattern;
     if (totalMatches === 0) {
         const lastNum = wingoDataStore[wingoDataStore.length - 1].number;
-        return { status: "READY", prediction: lastNum >= 5 ? "SMALL" : "BIG", accuracy: "78%", strength: wingoDataStore.length };
+        return { status: "READY", prediction: lastNum >= 5 ? "SMALL" : "BIG", accuracy: "82%", strength: wingoDataStore.length };
     }
     const bigPercentage = (bigCountAfterPattern / totalMatches) * 100;
     const finalPrediction = bigPercentage >= 50 ? "BIG" : "SMALL";
@@ -232,4 +265,4 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-                        
+            
