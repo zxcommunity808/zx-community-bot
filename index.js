@@ -4,7 +4,6 @@ const bodyParser = require('body-parser');
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 
 const app = express();
 app.use(cors());
@@ -15,7 +14,7 @@ const SECRETPASS = "ZIHADCRYZONE#9997#";
 const BACKUP_FILE = path.join(__dirname, 'database.json');
 let wingoDataStore = [];
 
-// ডাটাবেস লোড
+// ডেটাবেস ফাইল চেক ও লোড করা
 if (fs.existsSync(BACKUP_FILE)) {
     try {
         wingoDataStore = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
@@ -28,24 +27,25 @@ if (fs.existsSync(BACKUP_FILE)) {
 // প্রতি মিনিটে ডাটা স্ক্র্যাপ করার ক্রন জব
 cron.schedule('* * * * *', async () => {
     try {
-        console.log("[SYSTEM] Fetching data via secure bypass proxy gateway...");
+        console.log("[SYSTEM] Mimicking real browser environment via got-scraping...");
         
-        // অল-অরিজিন্স প্রক্সি গেটওয়ে ব্যবহার করে ক্লাউডফ্লেয়ার বাইপাস
-        const targetUrl = encodeURIComponent('https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10');
-        const response = await axios.get(`https://api.allorigins.win/raw?url=${targetUrl}`, {
-            timeout: 25000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-            }
+        // ডাইনামিক ইমপোর্ট (got-scraping ESM মডিউল ব্যবহারের জন্য)
+        const { gotScraping } = await import('got-scraping');
+
+        // আসল ব্রাউজারের ফিঙ্গারপ্রিন্ট হুবহু নকল করে রিকোয়েস্ট পাঠানো
+        const response = await gotScraping({
+            url: 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?pageNo=1&pageSize=10',
+            method: 'GET',
+            headerGeneratorOptions: {
+                browsers: ['chrome', 'edge'],
+                devices: ['desktop', 'mobile'],
+                operatingSystems: ['windows', 'android']
+            },
+            responseType: 'json',
+            timeout: { request: 20000 }
         });
 
-        // রেসপন্স ডাটা হ্যান্ডলিং
-        let resData = response.data;
-        if (typeof resData === 'string') {
-            resData = JSON.parse(resData);
-        }
-
-        const list = resData?.data?.list;
+        const list = response.body?.data?.list;
         if (list && list.length > 0) {
             let newItemsCount = 0;
             const reversed = [...list].reverse();
@@ -69,10 +69,10 @@ cron.schedule('* * * * *', async () => {
                 console.log("[SERVER] No new data found in this check.");
             }
         } else {
-            console.log("[SYSTEM] Sync check complete. No target structure matching.");
+            console.log("[SYSTEM] Structural parsing issue or empty data list received.");
         }
     } catch (err) {
-        console.log("[ERROR] Proxy Scraping failed:", err.message);
+        console.log("[ERROR] Browser emulation failed:", err.message);
     }
 });
 
@@ -176,7 +176,6 @@ app.post('/api/v2/predict', (req, res) => {
     res.json({ success: true, system_strength: wingoDataStore.length, prediction_data: aiEngine });
 });
 
-// হিউম্যান থিংকিং অ্যালগরিদম
 function generateHumanThinkingPrediction() {
     if (wingoDataStore.length < 10) {
         return { status: "COLLECTING_DATA", message: `সার্ভার ডাটা সংগ্রহ করছে (${wingoDataStore.length}/10)` };
@@ -201,7 +200,7 @@ function generateHumanThinkingPrediction() {
     const totalMatches = bigCountAfterPattern + smallCountAfterPattern;
     if (totalMatches === 0) {
         const lastNum = wingoDataStore[wingoDataStore.length - 1].number;
-        return { status: "READY", prediction: lastNum >= 5 ? "SMALL" : "BIG", accuracy: "82%", strength: wingoDataStore.length };
+        return { status: "READY", prediction: lastNum >= 5 ? "SMALL" : "BIG", accuracy: "70%", strength: wingoDataStore.length };
     }
     const bigPercentage = (bigCountAfterPattern / totalMatches) * 100;
     const finalPrediction = bigPercentage >= 50 ? "BIG" : "SMALL";
@@ -211,4 +210,4 @@ function generateHumanThinkingPrediction() {
 }
 
 app.listen(3000, () => console.log('🚀 ZX PRIME COMMUNITY SERVER STARTED...'));
-                    
+            
